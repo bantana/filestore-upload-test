@@ -16,24 +16,15 @@
 package testhlp
 
 import (
-	"bufio"
 	"bytes"
+	"crypto/sha256"
 	"fmt"
+	"hash"
 	"io"
-	"io/ioutil"
 	"log"
 	"math/rand"
-	"mime/multipart"
-	"net/http"
-	"net/http/httputil"
-	"os"
-	"os/exec"
-	"runtime"
-	// "strings"
 	"sync"
 	"time"
-	// "testing/iotest"
-	"unosoft.hu/aostor"
 )
 
 // The Uploader interface provides upload/download functions
@@ -50,7 +41,7 @@ func OneRound(up Uploader, parallel, N int, urlch chan<- string, dump bool) (err
 		bp := uint64(0)
 		var url string
 		for i := 0; i < N; i++ {
-			payload, err := getPayload()
+			payload, err := getPayload("")
 			if err != nil {
 				errch <- fmt.Errorf("error getting payload(%d): %s", i, err)
 				break
@@ -60,7 +51,7 @@ func OneRound(up Uploader, parallel, N int, urlch chan<- string, dump bool) (err
 					errch <- fmt.Errorf("error uploading: %s", err)
 					break
 				}
-				bp += payload.length
+				bp += payload.Length
 				select {
 				case urlch <- url:
 				default:
@@ -90,44 +81,46 @@ func OneRound(up Uploader, parallel, N int, urlch chan<- string, dump bool) (err
 // uploads and checks (reads back data) right after the upload
 func CheckedUpload(up Uploader, payload Payload, dump bool) (url string, err error) {
 	if dump {
-		log.Printf("mimetype=%s", payload.mimetype)
+		log.Printf("Content-Type=%s", payload.ContentType)
 	}
-	if _, ok := payload.data.(HashedReader); !ok {
-		payload.data = NewHashedReader(payload.data)
+	hr, ok := payload.Data.(HashedReader)
+	if !ok {
+		hr = NewHashedReader(payload.Data)
+		payload.Data = hr
 	}
 	url, err = up.Upload(payload)
-	uphash := payload.data.Sum()
+	uphash := hr.Sum()
 	if err != nil {
 		return url, err
 	}
 	if url == "" {
-		return url, errors.New("empty url!")
+		return url, fmt.Errorf("empty url!")
 	}
 	var r io.ReadCloser
 	for i := 0; i < 10; i++ {
 		if r, err = up.Get(url); err == nil {
-			downhash, length, err := Hash(r)
+			length, downhash, err := Hash(r)
 			if err != nil {
 				return url, err
 			}
-			if length != payload.length {
-				return url, errors.New("length mismatch for %s", url)
+			if length != payload.Length {
+				return url, fmt.Errorf("length mismatch for %s", url)
 			}
 			if !bytes.Equal(downhash, uphash) {
-				return url, errors.News("hash mismatch for %s", url)
+				return url, fmt.Errorf("hash mismatch for %s", url)
 			}
 			return url, nil
 		}
-		log.Printf("WARN[%d] cannot get %s: %s", i, txt, err)
+		log.Printf("WARN[%d] cannot get %s: %s", i, url, err)
 		time.Sleep(1)
 	}
-	return txt, err
+	return
 }
 
 var (
 	hsh       hash.Hash
 	hsh_mtx   = sync.Mutex{}
-	NewHasher = sha256.New()
+	NewHasher = sha256.New
 )
 
 // returns a hash of the data given by the reader
@@ -152,7 +145,7 @@ type HashedReader interface {
 }
 
 type hashedReader struct {
-	r   io.Reader
+	io.Reader
 	hsh hash.Hash
 }
 
@@ -161,7 +154,7 @@ func NewHashedReader(r io.Reader) HashedReader {
 		return hr
 	}
 	hsh := NewHasher()
-	return &hashedReader{r: io.TeeReader(r, NewHasher()), hsh: hsh}
+	return &hashedReader{Reader: io.TeeReader(r, NewHasher()), hsh: hsh}
 }
 
 func (r *hashedReader) Sum() []byte {

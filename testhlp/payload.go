@@ -15,6 +15,14 @@
 
 package testhlp
 
+import (
+	"bytes"
+	"io"
+	"log"
+	"mime/multipart"
+	"sync"
+)
+
 var (
 	urandom      io.Reader
 	payloadbuf   = bytes.NewBuffer(nil)
@@ -22,12 +30,12 @@ var (
 )
 
 type Payload struct {
-	mimetype string
-	data     io.Reader
-	length   uint64
+	ContentType string
+	Data        io.Reader
+	Length      uint64
 }
 
-func getPayload() (PLoad, error) {
+func getPayload(contentType string) (Payload, error) {
 	payload_lock.Lock()
 	defer payload_lock.Unlock()
 	n, err := io.CopyN(payloadbuf, urandom, 128)
@@ -43,17 +51,19 @@ func getPayload() (PLoad, error) {
 	if length == 0 {
 		log.Fatalf("zero payload (length=%d read=%d)", length, n)
 	}
-	reqbuf := bytes.NewBuffer(make([]byte, 0, 2*length+256))
-	mw := multipart.NewWriter(reqbuf)
-	w, err := mw.CreateFormFile("upfile", fmt.Sprintf("test-%d", length))
+	if contentType == "" {
+		contentType = "application/octet-strem"
+	}
+	return Payload{ContentType: contentType, Data: bytes.NewBuffer(buf),
+		Length: uint64(length)}, nil
+}
+
+func EncodePayload(w io.Writer, r io.Reader, filename string) (int64, error) {
+	mw := multipart.NewWriter(w)
+	defer mw.Close()
+	fw, err := mw.CreateFormFile("file", filename)
 	if err != nil {
 		log.Panicf("cannot create FormFile: %s", err)
 	}
-	m, err := w.Write(buf)
-	if err != nil {
-		log.Printf("written payload is %d bytes (%s)", m, err)
-	}
-	mw.Close()
-	return PLoad{buf, reqbuf.Bytes(),
-		mw.FormDataContentType(), uint64(length)}, nil
+	return io.Copy(fw, r)
 }

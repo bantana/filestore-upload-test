@@ -21,22 +21,22 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"time"
+	// "time"
 )
 
 // if called from command-line, start the server and push it under load!
 func main() {
 	hostport := flag.String("http", "", "running server's address")
 	flag.Parse()
-	srv, err := testhlp.StartServer(*hostport)
-	if err != nil {
-		log.Panicf("error starting server: %s", err)
-	}
-	defer func() {
-		if srv.Close != nil {
-			srv.Close()
-		}
-	}()
+	// srv, err := testhlp.StartServer(*hostport)
+	// if err != nil {
+	// 	log.Panicf("error starting server: %s", err)
+	// }
+	// defer func() {
+	// 	if srv.Close != nil {
+	// 		srv.Close()
+	// 	}
+	// }()
 
 	urlch := make(chan string, 1000)
 	defer close(urlch)
@@ -56,22 +56,24 @@ func main() {
 			}
 		}
 	}(urlch)
-	if *stage_interval > 0 {
-		ticker := time.Tick(time.Duration(*stage_interval) * time.Second)
-		// defer close(ticker)
-		go func(ch <-chan time.Time, hostport string) {
-			for now := range ch {
-				log.Printf("starting shovel at %s...", now)
-				if err = testhlp.Shovel(srv.Pid, hostport); err != nil {
-					log.Printf("error with shovel: %s", err)
-					break
-				}
-			}
-		}(ticker, *hostport)
-	}
+	// if *stage_interval > 0 {
+	// 	ticker := time.Tick(time.Duration(*stage_interval) * time.Second)
+	// 	// defer close(ticker)
+	// 	go func(ch <-chan time.Time, hostport string) {
+	// 		for now := range ch {
+	// 			log.Printf("starting shovel at %s...", now)
+	// 			if err = testhlp.Shovel(srv.Pid, hostport); err != nil {
+	// 				log.Printf("error with shovel: %s", err)
+	// 				break
+	// 			}
+	// 		}
+	// 	}(ticker, *hostport)
+	// }
+	up := &testhlp.Aostor{"http://" + *hostport + "/test"}
+	var err error
 	for i := 90; i < 100; i++ {
 		log.Printf("starting round %d...", i)
-		if err = testhlp.OneRound(srv.Url, i, 100, urlch, i == 1); err != nil {
+		if err = testhlp.OneRound(up, i, 100, urlch, i == 1); err != nil {
 			log.Printf("error with round %d: %s", i, err)
 			break
 		}
