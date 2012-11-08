@@ -28,6 +28,13 @@ import (
 func main() {
 	hostport := flag.String("http", "", "running server's address")
 	flag.Parse()
+	if hostport == nil || *hostport == "" {
+		log.Printf("http is required!")
+		os.Exit(1)
+	}
+	if (*hostport)[:1] == ":" {
+		*hostport = "localhost" + *hostport
+	}
 	// srv, err := testhlp.StartServer(*hostport)
 	// if err != nil {
 	// 	log.Panicf("error starting server: %s", err)
@@ -71,7 +78,7 @@ func main() {
 	// }
 	up := &testhlp.Aostor{"http://" + *hostport + "/test"}
 	var err error
-	for i := 90; i < 100; i++ {
+	for i := 1; i < 100; i++ {
 		log.Printf("starting round %d...", i)
 		if err = testhlp.OneRound(up, i, 100, urlch, i == 1); err != nil {
 			log.Printf("error with round %d: %s", i, err)

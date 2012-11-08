@@ -16,10 +16,12 @@
 package testhlp
 
 import (
+	"bufio"
 	"bytes"
 	"io"
 	"log"
 	"mime/multipart"
+	"os"
 	"sync"
 )
 
@@ -38,6 +40,14 @@ type Payload struct {
 func getPayload(contentType string) (Payload, error) {
 	payload_lock.Lock()
 	defer payload_lock.Unlock()
+	if payloadbuf == nil || urandom == nil {
+		ur, err := os.Open("/dev/urandom")
+		if err != nil {
+			return Payload{}, err
+		}
+		payloadbuf = bytes.NewBuffer(nil)
+		urandom = bufio.NewReader(ur)
+	}
 	n, err := io.CopyN(payloadbuf, urandom, 128)
 	if err != nil {
 		// payload_lock.Unlock()
