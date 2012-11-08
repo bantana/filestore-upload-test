@@ -21,8 +21,11 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"io/ioutil"
 	"log"
 	"math/rand"
+	"net/http"
+	"net/http/httputil"
 	"sync"
 	"time"
 )
@@ -159,4 +162,82 @@ func NewHashedReader(r io.Reader) HashedReader {
 
 func (r *hashedReader) Sum() []byte {
 	return r.hsh.Sum(nil)
+}
+
+func GetUrl(url string) (io.ReadCloser, error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("error with http.Get(%s): %s", url, err)
+	}
+	if resp == nil {
+		return nil, fmt.Errorf("nil response for %s!", url)
+	}
+	if !(200 <= resp.StatusCode && resp.StatusCode <= 299) {
+		return nil, fmt.Errorf("STATUS=%s (%s)", resp.Status, url)
+	}
+	return resp.Body, nil
+}
+
+func (payload Payload) Post(url string) (respBody []byte, err error) {
+	var n int64
+	reqbuf := bytes.NewBuffer(nil)
+	n, err = EncodePayload(reqbuf, payload.Data, fmt.Sprintf("test-%d", payload.Length))
+	if err != nil {
+		return
+	}
+	req, e := http.NewRequest("POST", url, reqbuf)
+	if e != nil {
+		err = e
+		return
+	}
+	req.ContentLength = n
+	req.Header.Set("Content-Type", payload.ContentType)
+	/*
+	   if dump {
+	       buf, e := httputil.DumpRequestOut(req, true)
+	       if e != nil {
+	           log.Panicf("cannot dump request %v: %s", req, e)
+	       } else {
+	           log.Printf("\n>>>>>>\nrequest:\n%v", buf)
+	       }
+	   }
+	*/
+	resp, e := http.DefaultClient.Do(req)
+	if e != nil {
+		buf, e := httputil.DumpRequestOut(req, true)
+		if e != nil {
+			log.Printf("cannot dump request %v: %s", req, e)
+			return nil, err
+		} else {
+			log.Printf("\n>>>>>>\nrequest:\n%v", buf)
+		}
+	}
+	if e != nil {
+		err = e
+		return
+	}
+	defer resp.Body.Close()
+	if resp.ContentLength > 0 {
+		respBody = make([]byte, resp.ContentLength)
+		length, e := io.ReadFull(resp.Body, respBody)
+		if e != nil {
+			err = e
+			return
+		}
+		respBody = respBody[:length]
+	} else {
+		respBody, e = ioutil.ReadAll(resp.Body)
+	}
+
+	if e != nil { //|| dump {
+		err = e
+		buf, e := httputil.DumpResponse(resp, true)
+		if e != nil {
+			log.Printf("cannot dump response %v: %s", resp, e)
+		} else {
+			log.Printf("\n<<<<<<\nresponse:\n%v", buf)
+		}
+		return nil, err
+	}
+	return
 }
