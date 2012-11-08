@@ -17,7 +17,9 @@ package testhlp
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
+	"log"
 )
 
 type Weed struct {
@@ -35,17 +37,23 @@ type weedMasterResponse struct {
 func (we Weed) Upload(payload Payload) (url string, err error) {
 	r, e := GetUrl(we.MasterUrl + "/dir/assign")
 	if e != nil {
-		err = e
+		err = fmt.Errorf("error getting %s: %s", we.MasterUrl+"/dir/assign", e)
 		return
 	}
 	//read JSON
 	dec := json.NewDecoder(r)
 	var resp weedMasterResponse
 	if err = dec.Decode(&resp); err != nil {
+		err = fmt.Errorf("error decoding response: %s", err)
 		return
 	}
 	url = "http://" + resp.PublicUrl + "/" + resp.Fid
-	_, err = payload.Post(url)
+	respBody, e := payload.Post(url)
+	if e != nil {
+		err = fmt.Errorf("error POSTing to %s: %s", url, e)
+	}
+	log.Printf("POST %s response: %s", url, respBody)
+
 	return
 }
 

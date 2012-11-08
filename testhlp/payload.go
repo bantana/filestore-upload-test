@@ -18,10 +18,13 @@ package testhlp
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"io"
 	"log"
 	"mime/multipart"
+	"net/textproto"
 	"os"
+	"strings"
 	"sync"
 )
 
@@ -33,8 +36,9 @@ var (
 
 type Payload struct {
 	ContentType string
-	Data        io.Reader
-	Length      uint64
+	// Data        io.Reader
+	Data   []byte
+	Length uint64
 }
 
 func getPayload(contentType string) (Payload, error) {
@@ -62,18 +66,38 @@ func getPayload(contentType string) (Payload, error) {
 		log.Fatalf("zero payload (length=%d read=%d)", length, n)
 	}
 	if contentType == "" {
-		contentType = "application/octet-strem"
+		contentType = "application/octet-stream"
 	}
-	return Payload{ContentType: contentType, Data: bytes.NewBuffer(buf),
+	return Payload{ContentType: contentType, Data: buf,
 		Length: uint64(length)}, nil
 }
 
-func EncodePayload(w io.Writer, r io.Reader, filename string) (int64, error) {
+func EncodePayload(w io.Writer, r io.Reader, filename, contentType string) (string, int64, error) {
 	mw := multipart.NewWriter(w)
 	defer mw.Close()
-	fw, err := mw.CreateFormFile("file", filename)
+	fw, err := CreateFormFile(mw, "file", filename, contentType)
+	// fw, err := mw.CreateFormFile("file", filename)
 	if err != nil {
 		log.Panicf("cannot create FormFile: %s", err)
 	}
-	return io.Copy(fw, r)
+	n, err := io.Copy(fw, r)
+	return mw.FormDataContentType(), n, err
+}
+
+func CreateFormFile(w *multipart.Writer, fieldname, filename, contentType string) (io.Writer, error) {
+	h := make(textproto.MIMEHeader)
+	h.Set("Content-Type", contentType)
+	h.Set("Content-Disposition",
+		fmt.Sprintf(`form-data; name="%s"; filename="%s"`,
+			escapeQuotes(fieldname), escapeQuotes(filename)))
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	return w.CreatePart(h)
+}
+
+var quoteEscaper = strings.NewReplacer("\\", "\\\\", `"`, "\\\"")
+
+func escapeQuotes(s string) string {
+	return quoteEscaper.Replace(s)
 }

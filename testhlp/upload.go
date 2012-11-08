@@ -18,6 +18,7 @@ package testhlp
 import (
 	"bytes"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"hash"
 	"io"
@@ -26,8 +27,14 @@ import (
 	"math/rand"
 	"net/http"
 	"net/http/httputil"
+	"strings"
 	"sync"
 	"time"
+)
+
+var (
+	dump     bool = false
+	hashIsOk bool = false
 )
 
 // The Uploader interface provides upload/download functions
@@ -38,6 +45,9 @@ type Uploader interface {
 
 // OneRound is the main function: runs one round of parallel uploads with concurrent reads
 func OneRound(up Uploader, parallel, N int, urlch chan<- string, dump bool) (err error) {
+
+	// parallel = 1
+
 	errch := make(chan error, 1+parallel)
 	donech := make(chan uint64, parallel)
 	upl := func(dump bool) {
@@ -86,32 +96,33 @@ func CheckedUpload(up Uploader, payload Payload, dump bool) (url string, err err
 	if dump {
 		log.Printf("Content-Type=%s", payload.ContentType)
 	}
-	hr, ok := payload.Data.(HashedReader)
-	if !ok {
-		hr = NewHashedReader(payload.Data)
-		payload.Data = hr
-	}
+	// hr, ok := payload.Data.(HashedReader)
+	// if !ok {
+	// 	hr = NewHashedReader(payload.Data)
+	// 	payload.Data = hr
+	// }
 	url, err = up.Upload(payload)
-	uphash := hr.Sum()
 	if err != nil {
 		return url, err
 	}
 	if url == "" {
 		return url, fmt.Errorf("empty url!")
 	}
+	// uphash := hr.Sum()
 	var r io.ReadCloser
 	for i := 0; i < 10; i++ {
 		if r, err = up.Get(url); err == nil {
-			length, downhash, err := Hash(r)
+			length, _, err := Hash(r)
 			if err != nil {
 				return url, err
 			}
 			if length != payload.Length {
 				return url, fmt.Errorf("length mismatch for %s", url)
 			}
-			if !bytes.Equal(downhash, uphash) {
-				return url, fmt.Errorf("hash mismatch for %s", url)
-			}
+			// if hashIsOk && !bytes.Equal(downhash, uphash) {
+			// 	return url, fmt.Errorf("hash mismatch for %s (up=%x, down=%x)",
+			// 		url, uphash, downhash)
+			// }
 			return url, nil
 		}
 		log.Printf("WARN[%d] cannot get %s: %s", i, url, err)
@@ -165,79 +176,114 @@ func (r *hashedReader) Sum() []byte {
 }
 
 func GetUrl(url string) (io.ReadCloser, error) {
-	resp, err := http.Get(url)
-	if err != nil {
-		return nil, fmt.Errorf("error with http.Get(%s): %s", url, err)
+	var (
+		err  error
+		resp *http.Response
+		msg  string
+	)
+	for i := 0; i < 10; i++ {
+		msg = ""
+		resp, err = http.Get(url)
+		if resp == nil {
+			// return nil, fmt.Errorf("nil response for %s!", url)
+			msg = fmt.Sprintf("nil response for %s!", url)
+		} else {
+			if err == nil {
+				if 200 <= resp.StatusCode && resp.StatusCode <= 299 {
+					return resp.Body, nil
+				}
+				msg = fmt.Sprintf("STATUS=%s (%s)", resp.Status, url)
+			} else {
+				// dumpResponse(resp, true)
+				msg = fmt.Sprintf("error with http.Get(%s): %s", url, err)
+			}
+		}
+		log.Println(msg)
+		time.Sleep(1)
 	}
-	if resp == nil {
-		return nil, fmt.Errorf("nil response for %s!", url)
-	}
-	if !(200 <= resp.StatusCode && resp.StatusCode <= 299) {
-		return nil, fmt.Errorf("STATUS=%s (%s)", resp.Status, url)
-	}
-	return resp.Body, nil
+	return nil, errors.New(msg)
 }
 
 func (payload Payload) Post(url string) (respBody []byte, err error) {
-	var n int64
+	if payload.Length == 0 {
+		err = errors.New("zero length payload!")
+		return
+	}
 	reqbuf := bytes.NewBuffer(nil)
-	n, err = EncodePayload(reqbuf, payload.Data, fmt.Sprintf("test-%d", payload.Length))
-	if err != nil {
-		return
-	}
-	req, e := http.NewRequest("POST", url, reqbuf)
+	formDataContentType, n, e := EncodePayload(reqbuf, bytes.NewReader(payload.Data),
+		fmt.Sprintf("test-%d", payload.Length), payload.ContentType)
 	if e != nil {
 		err = e
 		return
 	}
-	req.ContentLength = n
-	req.Header.Set("Content-Type", payload.ContentType)
-	/*
-	   if dump {
-	       buf, e := httputil.DumpRequestOut(req, true)
-	       if e != nil {
-	           log.Panicf("cannot dump request %v: %s", req, e)
-	       } else {
-	           log.Printf("\n>>>>>>\nrequest:\n%v", buf)
-	       }
-	   }
-	*/
+	if n == 0 {
+		err = errors.New("zero length encoded payload!")
+		return
+	}
+	req, e := http.NewRequest("POST", url, bytes.NewReader(reqbuf.Bytes()))
+	if e != nil {
+		err = fmt.Errorf("error creating POST to %s: %s", url, e)
+		return
+	}
+	// log.Printf("CL=%d n=%d size=%d", req.ContentLength, n, len(reqbuf.Bytes()))
+	req.ContentLength = int64(len(reqbuf.Bytes()))
+	req.Header.Set("MIME-Version", "1.0")
+	req.Header.Set("Content-Type", formDataContentType)
+	dumpRequest(req, false)
 	resp, e := http.DefaultClient.Do(req)
+	dumpResponse(resp, e != nil)
 	if e != nil {
-		buf, e := httputil.DumpRequestOut(req, true)
-		if e != nil {
-			log.Printf("cannot dump request %v: %s", req, e)
-			return nil, err
-		} else {
-			log.Printf("\n>>>>>>\nrequest:\n%v", buf)
-		}
-	}
-	if e != nil {
-		err = e
+		err = SubError(e, "error with POST")
 		return
 	}
 	defer resp.Body.Close()
+	// log.Printf("resp.ContentLength=%d", resp.ContentLength)
 	if resp.ContentLength > 0 {
 		respBody = make([]byte, resp.ContentLength)
-		length, e := io.ReadFull(resp.Body, respBody)
-		if e != nil {
-			err = e
-			return
+		if length, e := io.ReadFull(resp.Body, respBody); e == nil && length > 0 {
+			respBody = respBody[:length]
 		}
-		respBody = respBody[:length]
 	} else {
 		respBody, e = ioutil.ReadAll(resp.Body)
 	}
+	if e != nil {
+		err = fmt.Errorf("error reading response body: %s", e)
+	}
+	resp.Body = ioutil.NopCloser(bytes.NewReader(respBody))
 
-	if e != nil { //|| dump {
-		err = e
+	if !(200 <= resp.StatusCode && resp.StatusCode <= 299) {
+		err = fmt.Errorf("errorcode=%d message=%s", resp.StatusCode, respBody)
+		return
+	}
+
+	return
+}
+
+func dumpRequest(req *http.Request, force bool) {
+	if req != nil && (force || dump) {
+		buf, e := httputil.DumpRequestOut(req, true)
+		if e != nil {
+			log.Panicf("cannot dump request %v: %s", req, e)
+		} else {
+			log.Printf("\n>>>>>>\nrequest:\n%s", buf)
+		}
+	}
+}
+
+func dumpResponse(resp *http.Response, force bool) {
+	if resp != nil && (force || dump) {
 		buf, e := httputil.DumpResponse(resp, true)
 		if e != nil {
 			log.Printf("cannot dump response %v: %s", resp, e)
 		} else {
-			log.Printf("\n<<<<<<\nresponse:\n%v", buf)
+			log.Printf("\n>>>>>>\nresponse:\n%s", buf)
 		}
-		return nil, err
 	}
-	return
+}
+
+// SubError
+func SubError(err error, format string, args ...interface{}) error {
+	args = append(args, args[0])
+	args[0] = errors.New(strings.Replace(err.Error(), "\n", "\n  ", -1))
+	return fmt.Errorf(format+":\n%s", args...)
 }

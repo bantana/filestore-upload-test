@@ -21,19 +21,30 @@ import (
 	"log"
 	"net/http"
 	"os"
-	// "time"
+	"runtime"
+	"time"
 )
 
 // if called from command-line, start the server and push it under load!
 func main() {
-	hostport := flag.String("http", "", "running server's address")
+	aostorHp := flag.String("aostor", "", "aostor's server address host:port/realm")
+	weedHp := flag.String("weed", "", "weed-fs master server address host:port")
 	flag.Parse()
-	if hostport == nil || *hostport == "" {
+	var up testhlp.Uploader
+	switch {
+	case aostorHp != nil && *aostorHp != "":
+		if (*aostorHp)[:1] == ":" {
+			*aostorHp = "localhost" + *aostorHp
+		}
+		up = &testhlp.Aostor{"http://" + *aostorHp}
+	case weedHp != nil && *weedHp != "":
+		if (*weedHp)[:1] == ":" {
+			*weedHp = "localhost" + *weedHp
+		}
+		up = &testhlp.Weed{"http://" + *weedHp}
+	default:
 		log.Printf("http is required!")
 		os.Exit(1)
-	}
-	if (*hostport)[:1] == ":" {
-		*hostport = "localhost" + *hostport
 	}
 	// srv, err := testhlp.StartServer(*hostport)
 	// if err != nil {
@@ -52,6 +63,7 @@ func main() {
 			resp, e := http.Get(url)
 			if resp != nil && resp.Body != nil {
 				resp.Body.Close()
+				time.Sleep(1)
 			}
 			if e != nil {
 				log.Printf("error with http.Get(%s): %s", url, e)
@@ -77,10 +89,9 @@ func main() {
 	// 	}(ticker, *hostport)
 	// }
 
-	up := &testhlp.Weed{"http://" + *hostport}
-	// up := &testhlp.Aostor{"http://" + *hostport + "/test"}
+	runtime.GOMAXPROCS(runtime.NumCPU())
 	var err error
-	for i := 1; i < 100; i++ {
+	for i := 2; i < 100; i++ {
 		log.Printf("starting round %d...", i)
 		if err = testhlp.OneRound(up, i, 100, urlch, i == 1); err != nil {
 			log.Printf("error with round %d: %s", i, err)
