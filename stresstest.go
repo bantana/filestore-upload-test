@@ -76,7 +76,9 @@ func main() {
 	// 		}
 	// 	}(ticker, *hostport)
 	// }
-	up := &testhlp.Aostor{"http://" + *hostport + "/test"}
+
+	up := &testhlp.Weed{"http://" + *hostport}
+	// up := &testhlp.Aostor{"http://" + *hostport + "/test"}
 	var err error
 	for i := 1; i < 100; i++ {
 		log.Printf("starting round %d...", i)
