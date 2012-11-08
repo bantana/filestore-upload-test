@@ -195,7 +195,7 @@ func GetUrl(url string) (io.ReadCloser, error) {
 				msg = fmt.Sprintf("STATUS=%s (%s)", resp.Status, url)
 			} else {
 				// dumpResponse(resp, true)
-				msg = fmt.Sprintf("error with http.Get(%s): %s", url, err)
+				msg = fmt.Sprintf("erro with http.Get(%s): %s", url, err)
 			}
 		}
 		log.Println(msg)

@@ -19,7 +19,6 @@ import (
 	"flag"
 	"github.com/tgulacsi/filestore-upload-test/testhlp"
 	"log"
-	"net/http"
 	"os"
 	"runtime"
 	"time"
@@ -60,19 +59,15 @@ func main() {
 	defer close(urlch)
 	go func(urlch <-chan string) {
 		for url := range urlch {
-			resp, e := http.Get(url)
-			if resp != nil && resp.Body != nil {
-				resp.Body.Close()
-				time.Sleep(1)
+			body, e := testhlp.GetUrl(url)
+			if body != nil {
+				body.Close()
 			}
 			if e != nil {
-				log.Printf("error with http.Get(%s): %s", url, e)
+				log.Printf("error with Get(%s): %s", url, e)
 				os.Exit(1)
 			}
-			if !(200 <= resp.StatusCode && resp.StatusCode <= 299) {
-				log.Printf("STATUS=%s for %s", resp.Status, url)
-				os.Exit(2)
-			}
+			time.Sleep(1)
 		}
 	}(urlch)
 	// if *stage_interval > 0 {
