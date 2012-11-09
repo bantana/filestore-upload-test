@@ -28,6 +28,7 @@ import (
 func main() {
 	aostorHp := flag.String("aostor", "", "aostor's server address host:port/realm")
 	weedHp := flag.String("weed", "", "weed-fs master server address host:port")
+	dump := flag.Bool("dump", false, "dump?")
 	flag.Parse()
 	var up testhlp.Uploader
 	switch {
@@ -35,6 +36,7 @@ func main() {
 		if (*aostorHp)[:1] == ":" {
 			*aostorHp = "localhost" + *aostorHp
 		}
+		testhlp.GzipOk = false
 		up = &testhlp.Aostor{"http://" + *aostorHp}
 	case weedHp != nil && *weedHp != "":
 		if (*weedHp)[:1] == ":" {
@@ -83,6 +85,7 @@ func main() {
 	// 		}
 	// 	}(ticker, *hostport)
 	// }
+	testhlp.Dump = *dump
 
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	var err error

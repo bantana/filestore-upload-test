@@ -33,7 +33,8 @@ import (
 )
 
 var (
-	dump     bool = false
+	Dump     bool = false
+	GzipOk   bool = true
 	hashIsOk bool = false
 )
 
@@ -49,8 +50,12 @@ func OneRound(up Uploader, parallel, N int, urlch chan<- string, dump bool) (err
 	parallel = 1
 
 	if parallel <= 1 {
-		return uploadRound(up, N, urlch, nil, nil, dump)
+		log.Printf("calling uploadRound")
+		err = uploadRound(up, N, urlch, nil, nil, dump)
+		log.Printf("uploadRound: %s", err)
+		return err
 	}
+	return
 
 	errch := make(chan error, 1+parallel)
 	donech := make(chan uint64, parallel)
@@ -75,12 +80,16 @@ func OneRound(up Uploader, parallel, N int, urlch chan<- string, dump bool) (err
 func uploadRound(up Uploader, N int, urlch chan<- string, donech chan<- uint64, errch chan<- error, dump bool) error {
 	bp := uint64(0)
 	defer func() {
-		select {
-		case donech <- bp:
+		if donech != nil {
+			select {
+			case donech <- bp:
+			default:
+			}
 		}
 	}()
 	var url string
 	for i := 0; i < N; i++ {
+		log.Printf(" i=%d < %d=N", i, N)
 		payload, err := getPayload("")
 		if err != nil {
 			err = fmt.Errorf("error getting payload(%d): %s", i, err)
@@ -97,9 +106,11 @@ func uploadRound(up Uploader, N int, urlch chan<- string, donech chan<- uint64, 
 			if url, err = CheckedUpload(up, payload, dump || bp < 1); err != nil {
 				log.Printf("CU err=%s", err)
 				err = fmt.Errorf("error uploading: %s", err)
-				select {
-				case errch <- err:
-				default:
+				if errch != nil {
+					select {
+					case errch <- err:
+					default:
+					}
 				}
 				return err
 			}
@@ -114,6 +125,7 @@ func uploadRound(up Uploader, N int, urlch chan<- string, donech chan<- uint64, 
 				j--
 			}
 		}
+		log.Printf("eor %d", i)
 
 	}
 	return nil
@@ -211,7 +223,17 @@ func GetUrl(url string) (io.ReadCloser, error) {
 	)
 	for i := 0; i < 10; i++ {
 		msg = ""
-		resp, err = http.Get(url)
+		if GzipOk {
+			resp, err = http.Get(url)
+		} else {
+			req, e := http.NewRequest("GET", url, nil)
+			if e == nil {
+				req.Header.Set("Accept-Encoding", "ident")
+				resp, err = http.DefaultClient.Do(req)
+			} else {
+				msg = fmt.Sprintf("cannot create request for %s: %s", url, e)
+			}
+		}
 		if resp == nil {
 			// return nil, fmt.Errorf("nil response for %s!", url)
 			msg = fmt.Sprintf("nil response for %s!", url)
@@ -237,7 +259,7 @@ func (payload Payload) Post(url string) (respBody []byte, err error) {
 		err = errors.New("zero length payload!")
 		return
 	}
-	reqbuf := bytes.NewBuffer(nil)
+	reqbuf := bytes.NewBuffer(make([]byte, 0, payload.Length*2+256))
 	formDataContentType, n, e := EncodePayload(reqbuf, bytes.NewReader(payload.Data),
 		fmt.Sprintf("test-%d", payload.Length), payload.ContentType)
 	if e != nil {
@@ -248,7 +270,11 @@ func (payload Payload) Post(url string) (respBody []byte, err error) {
 		err = errors.New("zero length encoded payload!")
 		return
 	}
-	req, e := http.NewRequest("POST", url, bytes.NewReader(reqbuf.Bytes()))
+	var (
+		req  *http.Request
+		resp *http.Response
+	)
+	req, e = http.NewRequest("POST", url, bytes.NewReader(reqbuf.Bytes()))
 	if e != nil {
 		err = fmt.Errorf("error creating POST to %s: %s", url, e)
 		return
@@ -257,27 +283,44 @@ func (payload Payload) Post(url string) (respBody []byte, err error) {
 	req.ContentLength = int64(len(reqbuf.Bytes()))
 	req.Header.Set("MIME-Version", "1.0")
 	req.Header.Set("Content-Type", formDataContentType)
-	dumpRequest(req, false)
-	resp, e := http.DefaultClient.Do(req)
-	dumpResponse(resp, e != nil)
+	if !GzipOk {
+		req.Header.Set("Accept-Encoding", "ident")
+	}
+
+	resp, e = http.DefaultClient.Do(req)
 	if e != nil {
-		err = SubError(e, "error with POST")
+		err = fmt.Errorf("error POSTing %+v: %s", req, e)
 		return
 	}
+	req = resp.Request
+	dumpRequest(req, false)
+	if resp == nil || resp.Body == nil {
+		err = fmt.Errorf("nil response")
+		return
+	}
+	// if resp.ContentLength == -1 {
+	// 	resp.ContentLength = 32
+	// }
 	defer resp.Body.Close()
+	// dumpResponse(resp, e != nil)
 	// log.Printf("resp.ContentLength=%d", resp.ContentLength)
 	if resp.ContentLength > 0 {
 		respBody = make([]byte, resp.ContentLength)
 		if length, e := io.ReadFull(resp.Body, respBody); e == nil && length > 0 {
 			respBody = respBody[:length]
+		} else {
+			err = fmt.Errorf("error reading response %d body: %s", length, e)
+			return
 		}
-	} else {
+		log.Printf("CL=%d respBody=%s", resp.ContentLength, respBody)
+	} else if resp.ContentLength < 0 {
 		respBody, e = ioutil.ReadAll(resp.Body)
 	}
+	log.Printf("respBody=%s", respBody)
 	if e != nil {
 		err = fmt.Errorf("error reading response body: %s", e)
 	}
-	resp.Body = ioutil.NopCloser(bytes.NewReader(respBody))
+	// resp.Body = ioutil.NopCloser(bytes.NewReader(respBody))
 
 	if !(200 <= resp.StatusCode && resp.StatusCode <= 299) {
 		err = fmt.Errorf("errorcode=%d message=%s", resp.StatusCode, respBody)
@@ -288,10 +331,10 @@ func (payload Payload) Post(url string) (respBody []byte, err error) {
 }
 
 func dumpRequest(req *http.Request, force bool) {
-	if req != nil && (force || dump) {
+	if req != nil && (force || Dump) {
 		buf, e := httputil.DumpRequestOut(req, true)
 		if e != nil {
-			log.Panicf("cannot dump request %v: %s", req, e)
+			log.Printf("!!! cannot dump request %v: %s", req, e)
 		} else {
 			log.Printf("\n>>>>>>\nrequest:\n%s", buf)
 		}
@@ -299,10 +342,10 @@ func dumpRequest(req *http.Request, force bool) {
 }
 
 func dumpResponse(resp *http.Response, force bool) {
-	if resp != nil && (force || dump) {
+	if resp != nil && (force || Dump) {
 		buf, e := httputil.DumpResponse(resp, true)
 		if e != nil {
-			log.Printf("cannot dump response %v: %s", resp, e)
+			log.Printf("!!! cannot dump response %v: %s", resp, e)
 		} else {
 			log.Printf("\n>>>>>>\nresponse:\n%s", buf)
 		}
