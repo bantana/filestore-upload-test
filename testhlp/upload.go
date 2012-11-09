@@ -46,35 +46,16 @@ type Uploader interface {
 // OneRound is the main function: runs one round of parallel uploads with concurrent reads
 func OneRound(up Uploader, parallel, N int, urlch chan<- string, dump bool) (err error) {
 
-	// parallel = 1
+	parallel = 1
+
+	if parallel <= 1 {
+		return uploadRound(up, N, urlch, nil, nil, dump)
+	}
 
 	errch := make(chan error, 1+parallel)
 	donech := make(chan uint64, parallel)
-	upl := func(dump bool) {
-		bp := uint64(0)
-		var url string
-		for i := 0; i < N; i++ {
-			payload, err := getPayload("")
-			if err != nil {
-				errch <- fmt.Errorf("error getting payload(%d): %s", i, err)
-				break
-			}
-			for j := rand.Int() % 15; j < 2; j++ {
-				if url, err = CheckedUpload(up, payload, dump || bp < 1); err != nil {
-					errch <- fmt.Errorf("error uploading: %s", err)
-					break
-				}
-				bp += payload.Length
-				select {
-				case urlch <- url:
-				default:
-				}
-			}
-		}
-		donech <- bp
-	}
 	for j := 0; j < parallel; j++ {
-		go upl(dump && j < 1)
+		go uploadRound(up, N, urlch, donech, errch, dump && j < 1)
 	}
 	gbp := uint64(0)
 	for i := 0; i < parallel; {
@@ -88,6 +69,53 @@ func OneRound(up Uploader, parallel, N int, urlch chan<- string, dump bool) (err
 		}
 	}
 	log.Printf("done %d bytes", gbp)
+	return nil
+}
+
+func uploadRound(up Uploader, N int, urlch chan<- string, donech chan<- uint64, errch chan<- error, dump bool) error {
+	bp := uint64(0)
+	defer func() {
+		select {
+		case donech <- bp:
+		}
+	}()
+	var url string
+	for i := 0; i < N; i++ {
+		payload, err := getPayload("")
+		if err != nil {
+			err = fmt.Errorf("error getting payload(%d): %s", i, err)
+			log.Printf("err=%s", err)
+			select {
+			case errch <- err:
+			default:
+			}
+			return err
+		}
+		// occasionally do double/triple uploads from the same payload
+		for j := 0; j < 1; j++ {
+			log.Printf("start cycle j=%d", j)
+			if url, err = CheckedUpload(up, payload, dump || bp < 1); err != nil {
+				log.Printf("CU err=%s", err)
+				err = fmt.Errorf("error uploading: %s", err)
+				select {
+				case errch <- err:
+				default:
+				}
+				return err
+			}
+			bp += payload.Length
+			log.Printf("bp=%d", bp)
+			select {
+			case urlch <- url:
+			default:
+			}
+			log.Printf("cycle end")
+			if rand.Int()%5 == 0 {
+				j--
+			}
+		}
+
+	}
 	return nil
 }
 
@@ -126,7 +154,7 @@ func CheckedUpload(up Uploader, payload Payload, dump bool) (url string, err err
 			return url, nil
 		}
 		log.Printf("WARN[%d] cannot get %s: %s", i, url, err)
-		time.Sleep(1)
+		time.Sleep(1 * time.Second)
 	}
 	return
 }
@@ -199,7 +227,7 @@ func GetUrl(url string) (io.ReadCloser, error) {
 			}
 		}
 		log.Println(msg)
-		time.Sleep(1)
+		time.Sleep(1 * time.Second)
 	}
 	return nil, errors.New(msg)
 }

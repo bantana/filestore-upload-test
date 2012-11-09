@@ -16,8 +16,6 @@
 package testhlp
 
 import (
-	"bufio"
-	"bytes"
 	"fmt"
 	"io"
 	"log"
@@ -29,9 +27,11 @@ import (
 )
 
 var (
-	urandom      io.Reader
-	payloadbuf   = bytes.NewBuffer(nil)
-	payload_lock = sync.Mutex{}
+	// urandom      io.Reader
+	payloadbuf   = make([]byte, 0, 1<<20) //1Mb
+	pos          int
+	size         int = 128
+	payload_lock     = sync.Mutex{}
 )
 
 type Payload struct {
@@ -44,32 +44,38 @@ type Payload struct {
 func getPayload(contentType string) (Payload, error) {
 	payload_lock.Lock()
 	defer payload_lock.Unlock()
-	if payloadbuf == nil || urandom == nil {
+	if len(payloadbuf) == 0 {
 		ur, err := os.Open("/dev/urandom")
 		if err != nil {
 			return Payload{}, err
 		}
-		payloadbuf = bytes.NewBuffer(nil)
-		urandom = bufio.NewReader(ur)
+		payloadbuf = payloadbuf[:cap(payloadbuf)]
+		if n, err := io.ReadFull(ur, payloadbuf); err != nil || n != cap(payloadbuf) {
+			log.Panicf("cannot read %d bytes from /dev/urandom, just %d: %s",
+				cap(payloadbuf), n, err)
+		}
 	}
-	n, err := io.CopyN(payloadbuf, urandom, 128)
-	if err != nil {
-		// payload_lock.Unlock()
-		log.Panicf("cannot read %s: %s", urandom, err)
+	buf := payloadbuf[pos : pos+size]
+	log.Printf("pos=%d size=%d", pos, size)
+	if pos+size < len(payloadbuf)-1 {
+		pos++
+	} else {
+		pos = 0
+		if size < len(payloadbuf)-1 {
+			size++
+		} else {
+			size = 16
+		}
 	}
-	buf := payloadbuf.Bytes()
+
 	length := len(buf)
-	if length > 65 {
-		payloadbuf.Write(buf[length-65:])
-	}
 	if length == 0 {
-		log.Fatalf("zero payload (length=%d read=%d)", length, n)
+		log.Fatalf("zero payload")
 	}
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
-	return Payload{ContentType: contentType, Data: buf,
-		Length: uint64(length)}, nil
+	return Payload{ContentType: contentType, Data: buf, Length: uint64(length)}, nil
 }
 
 func EncodePayload(w io.Writer, r io.Reader, filename, contentType string) (string, int64, error) {
