@@ -19,6 +19,7 @@ import (
 	"flag"
 	"github.com/tgulacsi/filestore-upload-test/testhlp"
 	"log"
+	"math/rand"
 	"os"
 	"runtime"
 	"time"
@@ -26,9 +27,15 @@ import (
 
 // if called from command-line, start the server and push it under load!
 func main() {
+	var parallelRead, parallelWrite, requestNum int
 	aostorHp := flag.String("aostor", "", "aostor's server address host:port/realm")
 	weedHp := flag.String("weed", "", "weed-fs master server address host:port")
-	dump := flag.Bool("dump", false, "dump?")
+	flag.BoolVar(&testhlp.Dump, "dump", false, "dump?")
+	flag.IntVar(&parallelRead, "parallel.read", 1, "read parallelism")
+	flag.IntVar(&parallelWrite, "parallel.write", 1, "write parallelism")
+	flag.IntVar(&requestNum, "request.num", 100, "request number")
+	flag.BoolVar(&testhlp.GzipOk, "request.gzip", false, "request compressed?")
+
 	flag.Parse()
 	var up testhlp.Uploader
 	switch {
@@ -36,7 +43,6 @@ func main() {
 		if (*aostorHp)[:1] == ":" {
 			*aostorHp = "localhost" + *aostorHp
 		}
-		testhlp.GzipOk = false
 		up = &testhlp.Aostor{"http://" + *aostorHp}
 	case weedHp != nil && *weedHp != "":
 		if (*weedHp)[:1] == ":" {
@@ -59,41 +65,37 @@ func main() {
 
 	urlch := make(chan string, 1000)
 	defer close(urlch)
-	go func(urlch <-chan string) {
-		for url := range urlch {
-			body, e := testhlp.GetUrl(url)
-			if body != nil {
-				body.Close()
-			}
-			if e != nil {
-				log.Printf("error with Get(%s): %s", url, e)
-				os.Exit(1)
-			}
-			time.Sleep(1)
-		}
-	}(urlch)
-	// if *stage_interval > 0 {
-	// 	ticker := time.Tick(time.Duration(*stage_interval) * time.Second)
-	// 	// defer close(ticker)
-	// 	go func(ch <-chan time.Time, hostport string) {
-	// 		for now := range ch {
-	// 			log.Printf("starting shovel at %s...", now)
-	// 			if err = testhlp.Shovel(srv.Pid, hostport); err != nil {
-	// 				log.Printf("error with shovel: %s", err)
-	// 				break
-	// 			}
-	// 		}
-	// 	}(ticker, *hostport)
-	// }
-	testhlp.Dump = *dump
+	for i := 0; i < parallelRead; i++ {
+		go reader(urlch)
+	}
 
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	var err error
-	for i := 2; i < 100; i++ {
+	for i := 1; i < parallelWrite+1; i++ {
 		log.Printf("starting round %d...", i)
-		if err = testhlp.OneRound(up, i, 100, urlch, i == 1); err != nil {
+		if err = testhlp.OneRound(up, i, requestNum, urlch, i == 1); err != nil {
 			log.Printf("error with round %d: %s", i, err)
 			break
+		}
+	}
+}
+
+func reader(urlch chan string) {
+	for url := range urlch {
+		body, e := testhlp.GetUrl(url)
+		if body != nil {
+			body.Close()
+		}
+		if e != nil {
+			log.Printf("error with Get(%s): %s", url, e)
+			os.Exit(1)
+		}
+		time.Sleep(1)
+		if rand.Int()%5 == 0 {
+			select {
+			case urlch <- url:
+			default:
+			}
 		}
 	}
 }

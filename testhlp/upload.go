@@ -93,7 +93,7 @@ func uploadRound(up Uploader, N int, urlch chan<- string, donech chan<- uint64, 
 		payload, err := getPayload("")
 		if err != nil {
 			err = fmt.Errorf("error getting payload(%d): %s", i, err)
-			log.Printf("err=%s", err)
+			// log.Printf("err=%s", err)
 			select {
 			case errch <- err:
 			default:
@@ -102,7 +102,7 @@ func uploadRound(up Uploader, N int, urlch chan<- string, donech chan<- uint64, 
 		}
 		// occasionally do double/triple uploads from the same payload
 		for j := 0; j < 1; j++ {
-			log.Printf("start cycle j=%d", j)
+			// log.Printf("start cycle j=%d", j)
 			if url, err = CheckedUpload(up, payload, dump || bp < 1); err != nil {
 				log.Printf("CU err=%s", err)
 				err = fmt.Errorf("error uploading: %s", err)
@@ -120,12 +120,12 @@ func uploadRound(up Uploader, N int, urlch chan<- string, donech chan<- uint64, 
 			case urlch <- url:
 			default:
 			}
-			log.Printf("cycle end")
+			// log.Printf("cycle end")
 			if rand.Int()%5 == 0 {
 				j--
 			}
 		}
-		log.Printf("eor %d", i)
+		// log.Printf("eor %d", i)
 
 	}
 	return nil
