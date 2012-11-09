@@ -22,7 +22,8 @@ import (
 	"math/rand"
 	"os"
 	"runtime"
-	"time"
+	"sync"
+	// "time"
 )
 
 // if called from command-line, start the server and push it under load!
@@ -65,8 +66,10 @@ func main() {
 
 	urlch := make(chan string, 1000)
 	defer close(urlch)
+	wg := sync.WaitGroup{}
+
 	for i := 0; i < parallelRead; i++ {
-		go reader(urlch)
+		go reader(urlch, wg)
 	}
 
 	runtime.GOMAXPROCS(runtime.NumCPU())
@@ -78,10 +81,21 @@ func main() {
 			break
 		}
 	}
+
+	for i := 0; i < parallelRead; i++ {
+		urlch <- ""
+	}
+	wg.Wait()
 }
 
-func reader(urlch chan string) {
+func reader(urlch chan string, wg sync.WaitGroup) {
+	wg.Add(1)
 	for url := range urlch {
+		if url == "" {
+			wg.Done()
+			return
+		}
+		log.Printf("GET " + url)
 		body, e := testhlp.GetUrl(url)
 		if body != nil {
 			body.Close()
@@ -90,7 +104,7 @@ func reader(urlch chan string) {
 			log.Printf("error with Get(%s): %s", url, e)
 			os.Exit(1)
 		}
-		time.Sleep(1)
+		// time.Sleep(50 * time.Millisecond)
 		if rand.Int()%5 == 0 {
 			select {
 			case urlch <- url:
