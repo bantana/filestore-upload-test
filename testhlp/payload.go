@@ -30,7 +30,7 @@ var (
 	// urandom      io.Reader
 	payloadbuf   = make([]byte, 0, 1<<20) //1Mb
 	pos          int
-	size         int = 128
+	PayloadSize  int = 1 << 15
 	payload_lock     = sync.Mutex{}
 )
 
@@ -55,16 +55,16 @@ func getPayload(contentType string) (Payload, error) {
 				cap(payloadbuf), n, err)
 		}
 	}
-	buf := payloadbuf[pos : pos+size]
-	log.Printf("pos=%d size=%d", pos, size)
-	if pos+size < len(payloadbuf)-1 {
+	buf := payloadbuf[pos : pos+PayloadSize]
+	log.Printf("pos=%d size=%d", pos, PayloadSize)
+	if pos+PayloadSize < len(payloadbuf)-1 {
 		pos++
 	} else {
 		pos = 0
-		if size < len(payloadbuf)-1 {
-			size++
+		if PayloadSize < len(payloadbuf)-1 {
+			PayloadSize++
 		} else {
-			size = 16
+			PayloadSize = 1 << 10
 		}
 	}
 

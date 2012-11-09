@@ -36,6 +36,7 @@ func main() {
 	flag.IntVar(&parallelWrite, "parallel.write", 1, "write parallelism")
 	flag.IntVar(&requestNum, "request.num", 100, "request number")
 	flag.BoolVar(&testhlp.GzipOk, "request.gzip", false, "request compressed?")
+	flag.IntVar(&testhlp.PayloadSize, "request.size", 1<<15, "request initial size, in bytes")
 
 	flag.Parse()
 	var up testhlp.Uploader
