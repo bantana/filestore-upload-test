@@ -48,15 +48,12 @@ type Uploader interface {
 // OneRound is the main function: runs one round of parallel uploads with concurrent reads
 func OneRound(up Uploader, parallel, N int, urlch chan<- string, dump bool) (err error) {
 
-	parallel = 1
-
 	if parallel <= 1 {
 		log.Printf("calling uploadRound")
 		err = uploadRound(up, N, urlch, nil, nil, dump)
 		log.Printf("uploadRound: %s", err)
 		return err
 	}
-	return
 
 	errch := make(chan error, 1+parallel)
 	donech := make(chan uint64, parallel)
@@ -90,7 +87,9 @@ func uploadRound(up Uploader, N int, urlch chan<- string, donech chan<- uint64, 
 	}()
 	var url string
 	for i := 0; i < N; i++ {
-		log.Printf(" i=%d < %d=N", i, N)
+		if Debug {
+			log.Printf(" i=%d < %d=N", i, N)
+		}
 		payload, err := getPayload("")
 		if err != nil {
 			err = fmt.Errorf("error getting payload(%d): %s", i, err)
@@ -116,12 +115,13 @@ func uploadRound(up Uploader, N int, urlch chan<- string, donech chan<- uint64, 
 				return err
 			}
 			bp += payload.Length
-			log.Printf("bp=%d", bp)
+			// log.Printf("bp=%d", bp)
 			select {
 			case urlch <- url:
 			default:
 			}
 			// log.Printf("cycle end")
+			// repeat with odds 1:4
 			if rand.Int()%5 == 0 {
 				j--
 			}
@@ -134,7 +134,7 @@ func uploadRound(up Uploader, N int, urlch chan<- string, donech chan<- uint64, 
 
 // uploads and checks (reads back data) right after the upload
 func CheckedUpload(up Uploader, payload Payload, dump bool) (url string, err error) {
-	if dump {
+	if Debug {
 		log.Printf("Content-Type=%s", payload.ContentType)
 	}
 	// hr, ok := payload.Data.(HashedReader)
@@ -313,11 +313,12 @@ func (payload Payload) Post(url string) (respBody []byte, err error) {
 			err = fmt.Errorf("error reading response %d body: %s", length, e)
 			return
 		}
-		log.Printf("CL=%d respBody=%s", resp.ContentLength, respBody)
 	} else if resp.ContentLength < 0 {
 		respBody, e = ioutil.ReadAll(resp.Body)
 	}
-	log.Printf("respBody=%s", respBody)
+	if Debug {
+		log.Printf("CL=%d respBody=%s", resp.ContentLength, respBody)
+	}
 	if e != nil {
 		err = fmt.Errorf("error reading response body: %s", e)
 	}
@@ -327,6 +328,7 @@ func (payload Payload) Post(url string) (respBody []byte, err error) {
 		err = fmt.Errorf("errorcode=%d message=%s", resp.StatusCode, respBody)
 		return
 	}
+	log.Printf("POST %s => %s", url, respBody)
 
 	return
 }

@@ -18,13 +18,16 @@ package main
 import (
 	"flag"
 	"github.com/tgulacsi/filestore-upload-test/testhlp"
+	"io"
+	"io/ioutil"
 	"log"
-	"math/rand"
 	"os"
 	"runtime"
 	"sync"
-	// "time"
+	"time"
 )
+
+var pushback bool = true
 
 // if called from command-line, start the server and push it under load!
 func main() {
@@ -42,6 +45,11 @@ func main() {
 	flag.IntVar(&testhlp.PayloadSizeStep, "request.size.step", 1<<15, "request size step, in bytes")
 
 	flag.Parse()
+
+	if parallelWrite > 1 {
+		requestNum = (requestNum + (parallelWrite + 1)) / parallelWrite
+	}
+
 	var up testhlp.Uploader
 	switch {
 	case aostorHp != nil && *aostorHp != "":
@@ -69,8 +77,7 @@ func main() {
 	// }()
 
 	urlch := make(chan string, 10000)
-	defer close(urlch)
-	wg := sync.WaitGroup{}
+	wg := new(sync.WaitGroup)
 
 	for i := 0; i < parallelRead; i++ {
 		go reader(urlch, wg)
@@ -86,32 +93,47 @@ func main() {
 		}
 	}
 
-	for i := 0; i < parallelRead; i++ {
-		urlch <- ""
-	}
+	pushback = false
 	wg.Wait()
+	close(urlch)
+	log.Printf("OK")
 }
 
-func reader(urlch chan string, wg sync.WaitGroup) {
+func reader(urlch chan string, wg *sync.WaitGroup) {
 	wg.Add(1)
-	for url := range urlch {
-		if url == "" {
-			wg.Done()
-			return
+	defer wg.Done()
+	var url string
+	for {
+		select {
+		case url = <-urlch:
+		default:
+			if pushback {
+				time.Sleep(1 * time.Second)
+				continue
+			} else {
+				return
+			}
 		}
 		log.Printf("GET " + url)
 		body, e := testhlp.GetUrl(url)
-		if body != nil {
-			body.Close()
-		}
 		if e != nil {
 			log.Printf("error with Get(%s): %s", url, e)
 			os.Exit(1)
 		}
+		_, e = io.Copy(ioutil.Discard, body)
+		if body != nil {
+			body.Close()
+		}
+		if e != nil {
+			log.Printf("error reading %s: %s", url, e)
+			os.Exit(1)
+		}
 		// time.Sleep(50 * time.Millisecond)
-		if rand.Int()%5 != 0 {
+		if pushback {
 			select {
 			case urlch <- url:
+				// time.Sleep(10 * time.Millisecond)
+				runtime.Gosched()
 			default:
 			}
 		}
