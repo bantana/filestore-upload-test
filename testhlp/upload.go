@@ -33,6 +33,7 @@ import (
 )
 
 var (
+	Debug    bool = false
 	Dump     bool = false
 	GzipOk   bool = true
 	hashIsOk bool = false

@@ -32,11 +32,14 @@ func main() {
 	aostorHp := flag.String("aostor", "", "aostor's server address host:port/realm")
 	weedHp := flag.String("weed", "", "weed-fs master server address host:port")
 	flag.BoolVar(&testhlp.Dump, "dump", false, "dump?")
+	flag.BoolVar(&testhlp.Debug, "debug", false, "debug?")
 	flag.IntVar(&parallelRead, "parallel.read", 1, "read parallelism")
 	flag.IntVar(&parallelWrite, "parallel.write", 1, "write parallelism")
 	flag.IntVar(&requestNum, "request.num", 100, "request number")
 	flag.BoolVar(&testhlp.GzipOk, "request.gzip", false, "request compressed?")
-	flag.IntVar(&testhlp.PayloadSize, "request.size", 1<<15, "request initial size, in bytes")
+	flag.IntVar(&testhlp.PayloadSizeInit, "request.size.init", 1<<15, "request initial size, in bytes")
+	flag.IntVar(&testhlp.PayloadSizeMax, "request.size.max", 1<<20, "request maximal size, in bytes")
+	flag.IntVar(&testhlp.PayloadSizeStep, "request.size.step", 1<<15, "request size step, in bytes")
 
 	flag.Parse()
 	var up testhlp.Uploader
@@ -65,7 +68,7 @@ func main() {
 	// 	}
 	// }()
 
-	urlch := make(chan string, 1000)
+	urlch := make(chan string, 10000)
 	defer close(urlch)
 	wg := sync.WaitGroup{}
 
@@ -106,7 +109,7 @@ func reader(urlch chan string, wg sync.WaitGroup) {
 			os.Exit(1)
 		}
 		// time.Sleep(50 * time.Millisecond)
-		if rand.Int()%5 == 0 {
+		if rand.Int()%5 != 0 {
 			select {
 			case urlch <- url:
 			default:

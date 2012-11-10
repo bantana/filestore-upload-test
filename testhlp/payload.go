@@ -27,11 +27,12 @@ import (
 )
 
 var (
-	// urandom      io.Reader
-	payloadbuf   = make([]byte, 0, 1<<20) //1Mb
-	pos          int
-	PayloadSize  int = 1 << 15
-	payload_lock     = sync.Mutex{}
+	payloadbuf      []byte
+	pos, size       int
+	PayloadSizeInit int = 1 << 15 //payload initial size
+	PayloadSizeMax  int = 1 << 20 //payload maximal size
+	PayloadSizeStep int = 1 << 15 //payload increase step
+	payload_lock        = sync.Mutex{}
 )
 
 type Payload struct {
@@ -44,27 +45,30 @@ type Payload struct {
 func getPayload(contentType string) (Payload, error) {
 	payload_lock.Lock()
 	defer payload_lock.Unlock()
-	if len(payloadbuf) == 0 {
+	if payloadbuf == nil {
+		payloadbuf = make([]byte, PayloadSizeMax)
 		ur, err := os.Open("/dev/urandom")
 		if err != nil {
 			return Payload{}, err
 		}
-		payloadbuf = payloadbuf[:cap(payloadbuf)]
 		if n, err := io.ReadFull(ur, payloadbuf); err != nil || n != cap(payloadbuf) {
 			log.Panicf("cannot read %d bytes from /dev/urandom, just %d: %s",
 				cap(payloadbuf), n, err)
 		}
+		size = PayloadSizeInit
 	}
-	buf := payloadbuf[pos : pos+PayloadSize]
-	log.Printf("pos=%d size=%d", pos, PayloadSize)
-	if pos+PayloadSize < len(payloadbuf)-1 {
+	buf := payloadbuf[pos : pos+size]
+	if Debug {
+		log.Printf("pos=%d size=%d", pos, size)
+	}
+	if pos+size < len(payloadbuf)-1 {
 		pos++
 	} else {
 		pos = 0
-		if PayloadSize < len(payloadbuf)-1 {
-			PayloadSize++
+		if size < len(payloadbuf)-1 {
+			size += PayloadSizeStep
 		} else {
-			PayloadSize = 1 << 10
+			size = PayloadSizeInit
 		}
 	}
 
