@@ -36,6 +36,7 @@ var (
 	Debug    bool = false
 	Dump     bool = false
 	GzipOk   bool = true
+	SameOdds int  = 0
 	hashIsOk bool = false
 )
 
@@ -121,8 +122,8 @@ func uploadRound(up Uploader, N int, urlch chan<- string, donech chan<- uint64, 
 			default:
 			}
 			// log.Printf("cycle end")
-			// repeat with odds 1:4
-			if rand.Int()%5 == 0 {
+			// repeat with odds 1:SameOdds
+			if SameOdds > 0 && rand.Int()%(SameOdds+1) == 0 {
 				j--
 			}
 		}

@@ -43,6 +43,7 @@ func main() {
 	flag.IntVar(&testhlp.PayloadSizeInit, "request.size.init", 1<<15, "request initial size, in bytes")
 	flag.IntVar(&testhlp.PayloadSizeMax, "request.size.max", 1<<20, "request maximal size, in bytes")
 	flag.IntVar(&testhlp.PayloadSizeStep, "request.size.step", 1<<15, "request size step, in bytes")
+	flag.IntVar(&testhlp.SameOdds, "request.same", 0, "push same requests 1 out of N")
 
 	flag.Parse()
 
