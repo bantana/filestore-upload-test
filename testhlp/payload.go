@@ -29,10 +29,12 @@ import (
 var (
 	payloadbuf      []byte
 	pos, size       int
-	PayloadSizeInit int = 1 << 15 //payload initial size
-	PayloadSizeMax  int = 1 << 20 //payload maximal size
-	PayloadSizeStep int = 1 << 15 //payload increase step
-	payload_lock        = sync.Mutex{}
+	PayloadSizeInit int  = 1 << 15 //payload initial size
+	PayloadSizeMax  int  = 1 << 20 //payload maximal size
+	PayloadSizeStep int  = 1 << 15 //payload increase step
+	payload_lock         = sync.Mutex{}
+	Compressable    bool = false
+	multiplier      int  = 1
 )
 
 type Payload struct {
@@ -46,14 +48,34 @@ func getPayload(contentType string) (Payload, error) {
 	payload_lock.Lock()
 	defer payload_lock.Unlock()
 	if payloadbuf == nil {
-		payloadbuf = make([]byte, PayloadSizeMax)
+		if PayloadSizeMax < PayloadSizeInit {
+			PayloadSizeMax = PayloadSizeInit * 2
+		}
 		ur, err := os.Open("/dev/urandom")
 		if err != nil {
 			return Payload{}, err
 		}
-		if n, err := io.ReadFull(ur, payloadbuf); err != nil || n != cap(payloadbuf) {
+		payloadbuf = make([]byte, PayloadSizeMax)
+		length := len(payloadbuf)
+		if Compressable {
+			for multiplier = 1 << 8; multiplier > 1; multiplier >>= 1 {
+				if length > multiplier {
+					break
+				}
+			}
+			length /= multiplier
+		}
+		log.Printf("compressable? %s => multiplier=%d, length=%d", Compressable, multiplier, length)
+		if n, err := io.ReadFull(ur, payloadbuf[:length]); err != nil || n != length {
 			log.Panicf("cannot read %d bytes from /dev/urandom, just %d: %s",
-				cap(payloadbuf), n, err)
+				length, n, err)
+		}
+		if multiplier > 1 {
+			for i := length - 1; i > 0; i-- {
+				for j := 0; j < multiplier; j++ {
+					payloadbuf[i*multiplier+j] = payloadbuf[i+j]
+				}
+			}
 		}
 		size = PayloadSizeInit
 	}

@@ -125,6 +125,7 @@ func uploadRound(up Uploader, N int, urlch chan<- string, donech chan<- uint64, 
 			// repeat with odds 1:SameOdds
 			if SameOdds > 0 && rand.Int()%(SameOdds+1) == 0 {
 				j--
+				i++
 			}
 		}
 		// log.Printf("eor %d", i)

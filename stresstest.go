@@ -44,6 +44,7 @@ func main() {
 	flag.IntVar(&testhlp.PayloadSizeMax, "request.size.max", 1<<20, "request maximal size, in bytes")
 	flag.IntVar(&testhlp.PayloadSizeStep, "request.size.step", 1<<15, "request size step, in bytes")
 	flag.IntVar(&testhlp.SameOdds, "request.same", 0, "push same requests 1 out of N")
+	flag.BoolVar(&testhlp.Compressable, "request.compressable", false, "should the request be compressable?")
 
 	flag.Parse()
 
@@ -67,36 +68,32 @@ func main() {
 		log.Printf("http is required!")
 		os.Exit(1)
 	}
-	// srv, err := testhlp.StartServer(*hostport)
-	// if err != nil {
-	// 	log.Panicf("error starting server: %s", err)
-	// }
-	// defer func() {
-	// 	if srv.Close != nil {
-	// 		srv.Close()
-	// 	}
-	// }()
 
-	urlch := make(chan string, 10000)
-	wg := new(sync.WaitGroup)
+	var (
+		wg    *sync.WaitGroup
+		urlch chan string
+	)
+	if parallelRead > 0 {
+		urlch = make(chan string, 10000)
+		wg = new(sync.WaitGroup)
 
-	for i := 0; i < parallelRead; i++ {
-		go reader(urlch, wg)
+		for i := 0; i < parallelRead; i++ {
+			go reader(urlch, wg)
+		}
 	}
 
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	var err error
-	for i := 1; i < parallelWrite+1; i++ {
-		log.Printf("starting round %d...", i)
-		if err = testhlp.OneRound(up, i, requestNum, urlch, i == 1); err != nil {
-			log.Printf("error with round %d: %s", i, err)
-			break
-		}
+	if err = testhlp.OneRound(up, parallelWrite, requestNum, urlch, true); err != nil {
+		log.Printf("error: %s", err)
+		os.Exit(9)
 	}
 
-	pushback = false
-	wg.Wait()
-	close(urlch)
+	if parallelRead > 0 {
+		pushback = false
+		wg.Wait()
+		close(urlch)
+	}
 	log.Printf("OK")
 }
 
