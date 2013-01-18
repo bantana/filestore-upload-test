@@ -26,6 +26,7 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	// neturl "net/url"
 	"net/http/httputil"
 	"strings"
 	"sync"
@@ -178,6 +179,10 @@ var (
 	hsh       hash.Hash
 	hsh_mtx   = sync.Mutex{}
 	NewHasher = sha256.New
+	client = &http.Client{
+		Transport: &http.Transport{
+			DisableKeepAlives:false, DisableCompression:false,
+			MaxIdleConnsPerHost:1024}}
 )
 
 // returns a hash of the data given by the reader
@@ -232,7 +237,7 @@ func GetUrl(url string) (io.ReadCloser, error) {
 			req, e := http.NewRequest("GET", url, nil)
 			if e == nil {
 				req.Header.Set("Accept-Encoding", "ident")
-				resp, err = http.DefaultClient.Do(req)
+				resp, err = client.Do(req)
 			} else {
 				msg = fmt.Sprintf("cannot create request for %s: %s", url, e)
 			}
@@ -290,7 +295,7 @@ func (payload Payload) Post(url string) (respBody []byte, err error) {
 		req.Header.Set("Accept-Encoding", "ident")
 	}
 
-	resp, e = http.DefaultClient.Do(req)
+	resp, e = client.Do(req)
 	if e != nil {
 		err = fmt.Errorf("error POSTing %+v: %s", req, e)
 		return
