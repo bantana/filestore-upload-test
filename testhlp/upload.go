@@ -155,6 +155,9 @@ func CheckedUpload(up Uploader, payload Payload, dump bool) (url string, err err
 	var r io.ReadCloser
 	for i := 0; i < 10; i++ {
 		if r, err = up.Get(url); err == nil {
+			if r != nil {
+				defer r.Close()
+			}
 			length, _, err := Hash(r)
 			if err != nil {
 				return url, err
@@ -295,16 +298,18 @@ func (payload Payload) Post(url string) (respBody []byte, err error) {
 		err = fmt.Errorf("error POSTing %+v: %s", req, e)
 		return
 	}
-	req = resp.Request
-	dumpRequest(req, false)
+	if resp != nil {
+		req = resp.Request
+		dumpRequest(req, false)
+	}
 	if resp == nil || resp.Body == nil {
 		err = fmt.Errorf("nil response")
 		return
 	}
+	defer resp.Body.Close()
 	// if resp.ContentLength == -1 {
 	// 	resp.ContentLength = 32
 	// }
-	defer resp.Body.Close()
 	// dumpResponse(resp, e != nil)
 	// log.Printf("resp.ContentLength=%d", resp.ContentLength)
 	if resp.ContentLength > 0 {

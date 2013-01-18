@@ -36,6 +36,9 @@ type weedMasterResponse struct {
 
 func (we Weed) Upload(payload Payload) (url string, err error) {
 	r, e := GetUrl(we.MasterUrl + "/dir/assign")
+	if r != nil {
+		defer r.Close()
+	}
 	if e != nil {
 		err = fmt.Errorf("error getting %s: %s", we.MasterUrl+"/dir/assign", e)
 		return
