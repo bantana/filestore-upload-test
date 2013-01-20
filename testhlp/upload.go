@@ -182,10 +182,10 @@ var (
 	hsh       hash.Hash
 	hsh_mtx   = sync.Mutex{}
 	NewHasher = sha256.New
-	client = &http.Client{
+	client    = &http.Client{
 		Transport: &http.Transport{
-			DisableKeepAlives:false, DisableCompression:false,
-			MaxIdleConnsPerHost:1024}}
+			DisableKeepAlives: false, DisableCompression: false,
+			MaxIdleConnsPerHost: 1024}}
 )
 
 // returns a hash of the data given by the reader
@@ -298,9 +298,16 @@ func (payload Payload) Post(url string) (respBody []byte, err error) {
 		req.Header.Set("Accept-Encoding", "ident")
 	}
 
-	resp, e = client.Do(req)
+	for i := 0; i < 10; i++ {
+		resp, e = client.Do(req)
+		if e == nil {
+			break
+		}
+		log.Printf("POST error: %s", e)
+		time.Sleep(1 * time.Second)
+	}
 	if e != nil {
-		err = fmt.Errorf("error POSTing %+v: %s", req, e)
+		err = fmt.Errorf("error pOSTing %+v: %s", req, e)
 		return
 	}
 	if resp != nil {
