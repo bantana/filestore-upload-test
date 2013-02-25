@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"time"
 )
 
 type Weed struct {
@@ -50,10 +51,21 @@ func (we Weed) Upload(payload Payload) (url string, err error) {
 		err = fmt.Errorf("error decoding response: %s", err)
 		return
 	}
+	if resp.Fid == "" {
+		err = fmt.Errorf("no file id: %s", err)
+		return
+	}
 	url = "http://" + resp.PublicUrl + "/" + resp.Fid
-	respBody, e := payload.Post(url)
-	if e != nil {
-		err = fmt.Errorf("error POSTing to %s: %s", url, e)
+	var respBody []byte
+	for i := 0; i < 3; i++ {
+		respBody, e = payload.Post(url)
+		if e != nil {
+			log.Println(e)
+			err = fmt.Errorf("error POSTing to %s: %s", url, e)
+			time.Sleep(1 * time.Second)
+		} else {
+			break
+		}
 	}
 	log.Printf("POST %s response: %s", url, respBody)
 

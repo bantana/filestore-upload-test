@@ -120,7 +120,7 @@ func reader(urlch chan string, wg *sync.WaitGroup) {
 		}
 		_, e = io.Copy(ioutil.Discard, body)
 		if body != nil {
-			body.Close()
+			_ = body.Close()
 		}
 		if e != nil {
 			log.Printf("error reading %s: %s", url, e)
