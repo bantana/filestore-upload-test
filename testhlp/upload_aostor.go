@@ -1,18 +1,3 @@
-/*
-   Copyright 2013 Tamás Gulácsi
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-     http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
-*/
 // Copyright 2012 Tamás Gulácsi, UNO-SOFT Computing Ltd.
 
 // file-upload-test is free software: you can redistribute it and/or modify
@@ -34,20 +19,24 @@ import (
 	"io"
 )
 
+// Aostor is the aostor instance
 type Aostor struct {
-	BaseUrl string
+	// BaseURL is the base url for aostor
+	BaseURL string
 }
 
+// Upload uploads the payload
 func (ao Aostor) Upload(payload Payload) (url string, err error) {
-	respBody, e := payload.Post(ao.BaseUrl + "/up")
+	respBody, e := payload.Post(ao.BaseURL + "/up")
 	if e != nil {
 		err = e
 		return
 	}
 	//FIXME: urlencode
-	return ao.BaseUrl + "/" + string(respBody), nil
+	return ao.BaseURL + "/" + string(respBody), nil
 }
 
+// Get gets the url
 func (ao Aostor) Get(url string) (io.ReadCloser, error) {
-	return GetUrl(url)
+	return GetURL(url)
 }

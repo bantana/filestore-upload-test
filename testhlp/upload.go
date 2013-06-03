@@ -1,18 +1,3 @@
-/*
-   Copyright 2013 Tamás Gulácsi
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-     http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
-*/
 // Copyright 2012 Tamás Gulácsi, UNO-SOFT Computing Ltd.
 
 // file-upload-test is free software: you can redistribute it and/or modify
@@ -49,11 +34,15 @@ import (
 )
 
 var (
-	Debug    bool = false
-	Dump     bool = false
-	GzipOk   bool = true
-	SameOdds int  = 0
-	hashIsOk bool = false
+	// Debug switches debug output
+	Debug = false
+	// Dump - should we dump?
+	Dump = false
+	// GzipOk - should we allow gzip?
+	GzipOk = true
+	// SameOdds is the odds of repeated (same) upload
+	SameOdds      = 0
+	hashIsOk = false
 )
 
 // The Uploader interface provides upload/download functions
@@ -150,7 +139,7 @@ func uploadRound(up Uploader, N int, urlch chan<- string, donech chan<- uint64, 
 	return nil
 }
 
-// uploads and checks (reads back data) right after the upload
+// CheckedUpload uploads and checks (reads back data) right after the upload
 func CheckedUpload(up Uploader, payload Payload, dump bool) (url string, err error) {
 	if Debug {
 		log.Printf("Content-Type=%s", payload.ContentType)
@@ -194,8 +183,9 @@ func CheckedUpload(up Uploader, payload Payload, dump bool) (url string, err err
 }
 
 var (
-	hsh       hash.Hash
-	hsh_mtx   = sync.Mutex{}
+	hsh    hash.Hash
+	hshMtx = sync.Mutex{}
+	// NewHasher is the new Hash function to use
 	NewHasher = sha256.New
 	client    = &http.Client{
 		Transport: &http.Transport{
@@ -203,10 +193,10 @@ var (
 			MaxIdleConnsPerHost: 1024}}
 )
 
-// returns a hash of the data given by the reader
+// Hash returns a hash of the data given by the reader
 func Hash(r io.Reader) (uint64, []byte, error) {
-	hsh_mtx.Lock()
-	defer hsh_mtx.Unlock()
+	hshMtx.Lock()
+	defer hshMtx.Unlock()
 	if hsh == nil {
 		hsh = NewHasher()
 	} else {
@@ -219,9 +209,11 @@ func Hash(r io.Reader) (uint64, []byte, error) {
 	return uint64(length), hsh.Sum(nil), nil
 }
 
+// HashedReader is a io.Reader which also calculates the hash, too
 type HashedReader interface {
 	io.Reader
-	Sum() []byte //returns the read data's hash value
+	// Sum returns the hash
+	Sum() []byte
 }
 
 type hashedReader struct {
@@ -229,6 +221,7 @@ type hashedReader struct {
 	hsh hash.Hash
 }
 
+// NewHashedReader wraps an io.Reader as a HashedReader
 func NewHashedReader(r io.Reader) HashedReader {
 	if hr, ok := r.(HashedReader); ok {
 		return hr
@@ -237,11 +230,13 @@ func NewHashedReader(r io.Reader) HashedReader {
 	return &hashedReader{Reader: io.TeeReader(r, NewHasher()), hsh: hsh}
 }
 
+// Sum returns the hash
 func (r *hashedReader) Sum() []byte {
 	return r.hsh.Sum(nil)
 }
 
-func GetUrl(url string) (io.ReadCloser, error) {
+// GetURL GETs the url
+func GetURL(url string) (io.ReadCloser, error) {
 	var (
 		err  error
 		resp *http.Response
@@ -280,6 +275,7 @@ func GetUrl(url string) (io.ReadCloser, error) {
 	return nil, errors.New(msg)
 }
 
+// Post POSTs the payload to the url
 func (payload Payload) Post(url string) (respBody []byte, err error) {
 	if payload.Length == 0 {
 		err = errors.New("zero length payload!")
@@ -389,7 +385,7 @@ func dumpResponse(resp *http.Response, force bool) {
 	}
 }
 
-// SubError
+// SubError a returns another error appended to the previous one
 func SubError(err error, format string, args ...interface{}) error {
 	args = append(args, args[0])
 	args[0] = errors.New(strings.Replace(err.Error(), "\n", "\n  ", -1))

@@ -1,18 +1,3 @@
-/*
-   Copyright 2013 Tamás Gulácsi
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-     http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
-*/
 // Copyright 2012 Tamás Gulácsi, UNO-SOFT Computing Ltd.
 
 // file-upload-test is free software: you can redistribute it and/or modify
@@ -42,7 +27,7 @@ import (
 	"time"
 )
 
-var pushback bool = true
+var pushback = true
 
 // if called from command-line, start the server and push it under load!
 func main() {
@@ -73,12 +58,12 @@ func main() {
 		if (*aostorHp)[:1] == ":" {
 			*aostorHp = "localhost" + *aostorHp
 		}
-		up = &testhlp.Aostor{"http://" + *aostorHp}
+		up = &testhlp.Aostor{BaseURL: "http://" + *aostorHp}
 	case weedHp != nil && *weedHp != "":
 		if (*weedHp)[:1] == ":" {
 			*weedHp = "localhost" + *weedHp
 		}
-		up = &testhlp.Weed{"http://" + *weedHp}
+		up = &testhlp.Weed{MasterURL: "http://" + *weedHp}
 	default:
 		log.Printf("http is required!")
 		os.Exit(1)
@@ -128,7 +113,7 @@ func reader(urlch chan string, wg *sync.WaitGroup) {
 			}
 		}
 		log.Printf("GET " + url)
-		body, e := testhlp.GetUrl(url)
+		body, e := testhlp.GetURL(url)
 		if e != nil {
 			log.Printf("error with Get(%s): %s", url, e)
 			os.Exit(1)

@@ -1,18 +1,3 @@
-/*
-   Copyright 2013 Tamás Gulácsi
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-     http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
-*/
 // Copyright 2012 Tamás Gulácsi, UNO-SOFT Computing Ltd.
 
 // file-upload-test is free software: you can redistribute it and/or modify
@@ -42,16 +27,22 @@ import (
 )
 
 var (
-	payloadbuf      []byte
-	pos, size       int
-	PayloadSizeInit int  = 1 << 15 //payload initial size
-	PayloadSizeMax  int  = 1 << 20 //payload maximal size
-	PayloadSizeStep int  = 1 << 15 //payload increase step
-	payload_lock         = sync.Mutex{}
-	Compressable    bool = false
-	multiplier      int  = 1
+	payloadbuf []byte
+	pos, size  int
+	//PayloadSizeInit is the initial payload size
+	PayloadSizeInit = 1 << 15
+	//PayloadSizeMax is the maximum payload size
+	PayloadSizeMax = 1 << 20
+	//PayloadSizeStep is the payload size increase step
+	PayloadSizeStep = 1 << 15
+	payloadLock     = sync.Mutex{}
+
+	//Compressable says whether the payload should be compressable or not
+	Compressable = false
+	multiplier   = 1
 )
 
+// Payload is one mail part
 type Payload struct {
 	ContentType string
 	// Data        io.Reader
@@ -60,8 +51,8 @@ type Payload struct {
 }
 
 func getPayload(contentType string) (Payload, error) {
-	payload_lock.Lock()
-	defer payload_lock.Unlock()
+	payloadLock.Lock()
+	defer payloadLock.Unlock()
 	if payloadbuf == nil {
 		if PayloadSizeMax < PayloadSizeInit {
 			PayloadSizeMax = PayloadSizeInit * 2
@@ -119,6 +110,7 @@ func getPayload(contentType string) (Payload, error) {
 	return Payload{ContentType: contentType, Data: buf, Length: uint64(length)}, nil
 }
 
+// EncodePayload encodes the payload
 func EncodePayload(w io.Writer, r io.Reader, filename, contentType string) (string, int64, error) {
 	mw := multipart.NewWriter(w)
 	defer mw.Close()
@@ -131,6 +123,7 @@ func EncodePayload(w io.Writer, r io.Reader, filename, contentType string) (stri
 	return mw.FormDataContentType(), n, err
 }
 
+// CreateFormFile creates a form file
 func CreateFormFile(w *multipart.Writer, fieldname, filename, contentType string) (io.Writer, error) {
 	h := make(textproto.MIMEHeader)
 	h.Set("Content-Type", contentType)
